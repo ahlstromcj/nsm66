@@ -1,0 +1,882 @@
+/*
+ *  This file is part of nsm66.
+ *
+ *  nsm66 is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  nsm66 is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with nsm66; if not, write to the Free Software
+ *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
+
+/**
+ * \file          nsmclient.cpp
+ *
+ *  This module defines some informative functions that are actually
+ *  better off as functions.
+ *
+ * \library       nsm66 application
+ * \author        Chris Ahlstrom
+ * \date          2020-03-01
+ * \updates       2025-04-24
+ * \license       GNU GPLv2 or above
+ *
+ *  nsmclient is an Non Session Manager (NSM) OSC client agent.  The NSM API
+ *  comprises a simple Open Sound Control (OSC) based protocol.
+ *
+ *  The Non project contains a daemon, nsmd, which is an implementation of the
+ *  server side of the NSM API. nsmd is controlled by the non-session-manager
+ *  GUI. The same server-side API can also be implemented by other session
+ *  managers (such as LADISH).  The only dependency for client implementations
+ *  is liblo (the OSC library) and the nsm.h header file.
+ *
+ *  Session Manager Startup:
+ *
+ *      To start the Non Session Manager and the GUI:
+ *
+ *      $ non-session-manager [ -- --session-root path ] &
+ *
+ *      The default path is "$HOME/NSM Sessions".  Inside this directory there
+ *      will ultimately exist one directory per session, each with the name of
+ *      the session as given by the user.  Inside this session directory is a
+ *      file called "session.nsm".  Inside this file is a list of session
+ *      clients in the following format:
+ *
+ *          appname:exename:nXXXX       (example:  qnsm66:qnsm66:nYUSM)
+ *
+ *      where XXXX is a set of four random uppercase ASCII letters.  The
+ *      string "nXXXX" is used to look up clients.
+ *
+ *      At startup, the environment variable NSM_URL is added to the
+ *      environment.  It's format is described below. Commands are handled as
+ *      per the "Commands handling by the server" section at the top of the
+ *      nsmmessageex.cpp module. A new session (e.g. "MySession") can be added
+ *      using the "New" button.  It will be stored in "$HOME / New Sessions /
+ *      MySession / session.nsm", which starts out empty.
+ *
+ *      Once running, an executable can be added as a client.  However, the
+ *      executable must be in the path.  The command "/nsm/server/add" will
+ *      fail with the error "Absolute paths are not permitted. Clients must be
+ *      in $PATH".  Once added properly, NSM spawns the executable, and the
+ *      executable inherits the environment (i.e. NSM_URL).
+ *
+ *      After closing/saving the session, the session.nsm file contains
+ *      only a line such as "qnsm66:qnsm66:nMTRJ", as noted above.
+ *
+ *      Once qnsm66 is part of the session, clicking on the session name will
+ *      launch qnsm66.
+ *
+ *  Process:
+ *
+ *      -#  Find out if NSM_URL is defined in the host environment, and
+ *          create the nsmclient object on the heap if so. The
+ *          create_nsmclient() should be used; it returns a "unique pointer".
+ *          (We may need to provide specific factory functions for Qt, Gtkmm,
+ *          and command-line versions of the application.)
+ *      -#  If NSM_URL is valid and reachable, call the nsmbase::announce()
+ *          function.
+ *      -#  Connect up callbacks (e.g. signals in Qt) for the following events:
+ *          -   Open NSM session. The caller should first see if this nsmclient
+ *              is active.  If so, close the session, which checks the
+ *              dirty-count in order to ask the user if changes need to be
+ *              saved.
+ *          -   Save NSM session.
+ *          -   Show NSM session.
+ *          -   Hide NSM session.
+ *      -#  Applications must not register JACK clients until receiving an
+ *          open message, which provides a unique client name prefix suitable
+ *          for passing to JACK.
+ *      -#  Call nsmclient::announce(APP_TITLE, ":switch:dirty:optional-gui:")
+ *          if using a GUI.
+ *
+ *  NSM_URL:
+ *
+ *      The NSM_URL environment variable is used to inform clients of how to
+ *      reach the nsmd daemon, which can be started as follows:
+ *
+ *          nsmd [--osc-port portnum] [--session-root path] [--detach]
+ *
+ *      In the following setting, 18440 is the 'portnum'.  127.0.0.1 is the
+ *      local host (the computer on which all NSM-related apps are running.
+ *
+ *          NSM_URL=osc.udp://127.0.0.1:18440/
+ *          NSM_URL=osc.udp://mlsleno:15325/        (on developer laptop)
+ *          NSM_URL=osc.udp://mlsasus.mls:12325/    (on another laptop)
+ *
+ *      Note that, if running an nsm_proxy client, this variable may need to be
+ *      passed on the command-line (in typical bash fashion).
+ *
+ *      Also see the file contrib/non/nsmopen.sh for examples, and "oscsend
+ *      --help".
+ *
+ *  New session:
+ *
+ *      TODO
+ *
+ *  Detecting NSM session actions:
+ *
+ *      In a Qt-based application, we can provide an extended NSM client that
+ *      will respond to signals propagated by the "emit" operator. In a
+ *      command-line application, we can set flags that are detected in a
+ *      polling loop and cause actions to occur.  In Gtkmm applications, we
+ *      can set callbacks to be executed.  It would be nice to use the same
+ *      (callback?) system for all of them.
+ *
+ * Shutdown:
+ *
+ *      When an NSM client shuts down, NSM detects its PID and detects if the
+ *      client aborted or stopped normally. A normal stopped occurs when the
+ *      client receives a KILL or QUIT command.  If a QUIT command, the server
+ *      sends:
+ *
+ *          "/nsm/gui/client/status" + Client-ID + "removed" status
+ *
+ *      Otherwise, it sends two messages:
+ *
+ *          "/nsm/gui/client/label" + Client-ID + optional error message
+ *          "/nsm/gui/client/status" + Client-ID + "stopped"
+ *
+ *  Notes for the future:
+ *
+ *      There's the general NSM osc protocol which allows basic session
+ *      management like adding programs, listing the current sessions and
+ *      starting one. This would be sufficient for cadence.
+ *
+ *      Detection of NSM is by checking validity of NSM_URL environment variable
+ *      and getting a response from it so a simple "/nsm/session/list" to
+ *      NSM_URL would be sufficient to both populate the list and detect whether
+ *      it's running
+ *
+ *      nsm-proxy integration, however, might be more difficult due to nsmd only
+ *      providing details of launching programs to the non-session-manager gui.
+ *
+ *      Also nsmd will only bind to a single GUI, so this should be the
+ *      frontend. (An alternative would be to modify nsmd to support multiple
+ *      GUIs running at the same time.)
+ *
+ *      New tool that implements the /nsm/gui/xxx OSC endpoint to receive more
+ *      details about the session which allow it to give a view of the current
+ *      session.
+ *
+ *      INVESTIGATE the NSM replacement, RaySession.
+ *
+ *      Functions and headers from cfg66 and lib66 are declared in these
+ *      header files.
+ */
+
+#include "c_macros.h"                   /* not_nullptr() macro              */
+#include "cpp_types.hpp"                /* string, vector, lib66::msglevel  */
+#include "cfg/appinfo.hpp"              /* cfg::set_client_name()           */
+#include "nsm/nsmclient.hpp"            /* nsm66::nsmclient class           */
+#include "nsm/nsmmessagesex.hpp"        /* nsm66::nsm message functions     */
+#include "util/msgfunctions.hpp"        /* util::info_printf()              */
+#include "util/strfunctions.hpp"        /* V() macro                        */
+
+namespace nsm
+{
+
+/*--------------------------------------------------------------------------
+ * OSC nsmclient handler static functions
+ *--------------------------------------------------------------------------*/
+
+/**
+ *  A handler for osc::tag::replyex =  { "/reply" + "ssss" }
+ *
+ *  If it is an osc::tag::gui_announce ("/nsm/gui/gui_announce" + "s", with
+ *  the "s" not being used here) reply, then nsmclient::announce_reply() is
+ *  called.
+ *
+ *  Compare this client response to the nsmcontroller::osc_handler()
+ *  response to the osc::tag::guiannounce ("/nsm/gui/gui_announce" + "")
+ *  reply.
+ */
+
+int
+nsmclient::osc_nsm_announce_reply
+(
+    const char * path,
+    const char * types,
+    lo_arg ** argv,
+    int /* argc */,
+    lo_message /* msg */,
+    void * user_data
+)
+{
+    nsmbase * pnsmc = static_cast<nsmbase *>(user_data);
+    if (is_nullptr(pnsmc))
+        return osc::osc_msg_unhandled();
+
+    if (nsm::is_gui_announce(&argv[0]->s))      /* check the /reply path    */
+    {
+        nsm::incoming_msg("Announce Reply", path, types);
+        pnsmc->announce_reply(&argv[1]->s, &argv[2]->s, &argv[3]->s);
+    }
+    else
+        nsm::incoming_msg("Basic Reply", path, types);
+
+    return osc::osc_msg_handled();
+}
+
+/**
+ *  A handler for osc::tag::cliopen =  { "/nsm/client/open" + "sss" }
+ *
+ *  See nsmclient::open() for more information.
+ */
+
+int
+nsmclient::osc_nsm_open
+(
+    const char * path,
+    const char * types,
+    lo_arg ** argv,
+    int /* argc */,
+    lo_message /* msg */,
+    void * user_data
+)
+{
+    nsmbase * pnsmc = static_cast<nsmbase *>(user_data);
+    if (is_nullptr(pnsmc))
+        return osc::osc_msg_unhandled();
+
+    nsm::incoming_msg("Open", path, types);
+    pnsmc->open(&argv[0]->s, &argv[1]->s, &argv[2]->s);
+    return osc::osc_msg_handled();
+}
+
+/**
+ *  A handler for osc::tag::clisave =  { "/nsm/client/sve" + "" }
+ *
+ *  It calls nsmclient::save() to save the session, that is, this
+ *  application's contribution to the session. However, there's
+ *  not much to do in this base class.
+ */
+
+int
+nsmclient::osc_nsm_save
+(
+    const char * path,
+    const char * types,
+    lo_arg ** /* argv */,
+    int /* argc */,
+    lo_message /* msg */,
+    void * user_data
+)
+{
+    nsmbase * pnsmc = static_cast<nsmbase *>(user_data);
+    if (is_nullptr(pnsmc))
+        return osc::osc_msg_unhandled();
+
+    nsm::incoming_msg("Save", path, types);
+    pnsmc->save();                  /* a virtual function   */
+    return osc::osc_msg_handled();
+}
+
+/**
+ *  A handler for osc::tag::cliloaded =  { "/nsm/client/session_is_loaded" + "" }
+ *
+ *  This function is called after nsmd reads the session file.
+ *  See nsmclient::loaded() for more information.
+ */
+
+int
+nsmclient::osc_nsm_session_loaded
+(
+    const char * path,
+    const char * types,
+    lo_arg ** /* argv */,
+    int /* argc */,
+    lo_message /* msg */,
+    void * user_data
+)
+{
+    nsmbase * pnsmc = static_cast<nsmbase *>(user_data);
+    if (is_nullptr(pnsmc))
+        return osc::osc_msg_unhandled();
+
+    nsm::incoming_msg("Session Loaded", path, types);
+    pnsmc->loaded();
+    return osc::osc_msg_handled();
+}
+
+/**
+ *  A handler for osc::tag::clilabel =  { "/nsm/client/label" + "s" }
+ *
+ *  nsmd handles clilabel by sending osc::tag::guilabel to the NSM
+ *  GUI.
+ *
+ *  Note that there is another related tag:
+ *
+ *      osc::tag::guilabel = { "/nsm/gui/client/label" + "ss" }
+ *
+ *  nsmd sends osc::tag:: guilabel (and osc::tag:: guistatus) to an NSM GUI
+ *  to effect the change in client information when a client is launched,
+ *  announced, or a client sends a label via osc::tag:: clilabel.
+ *
+ *  The NSM controller (nsm-legacy-gui or nsmctl) checks for
+ *  "/nsm/gui/client/ *" and handles osc::tag::guinew to add a client,
+ *  and osc::tag::guistatus, osc::tag::guiprogress, osc::tag::guidirty,
+ *  osc::tag::guivisible, osc::tag::guilabel, osc::tag::guioption, and
+ *  osc::tag::guiswitch.
+ */
+
+int
+nsmclient::osc_nsm_label
+(
+    const char * path,
+    const char * types,
+    lo_arg ** argv,
+    int /* argc */,
+    lo_message /* msg */,
+    void * user_data
+)
+{
+    nsmbase * pnsmc = static_cast<nsmbase *>(user_data);
+    if (is_nullptr(pnsmc))
+        return osc::osc_msg_unhandled();
+
+    nsm::incoming_msg("Label", path, types);
+    pnsmc->label(std::string(&argv[0]->s));         /* a virtual function */
+    return osc::osc_msg_handled();
+}
+
+/**
+ *  A handler for osc::tag::guishow =
+ *
+ *      { "/nsm/gui/client/show_optional_gui" + "s" }
+ *
+ *  This function could also be called osc_show_gui().  See the nsm-proxy code.
+ *  This message is sent by the NSM GUI to instruct nsmd to tell the client
+ *  to show itself.
+ *
+ *  What about the message osc::tag::clishow?
+ *
+ *      { "/nsm/client/show_optional_gui" + "" }
+ *
+ *  This message is sent to the specified client (looked up by ID) to tell it
+ *  to show itself.
+ */
+
+int
+nsmclient::osc_nsm_show
+(
+    const char * path,
+    const char * types,
+    lo_arg ** /* argv */,
+    int /* argc */,
+    lo_message /* msg */,
+    void * user_data
+)
+{
+    nsmbase * pnsmc = static_cast<nsmbase *>(user_data);
+    if (is_nullptr(pnsmc))
+        return osc::osc_msg_unhandled();
+
+    nsm::incoming_msg("Show", path, types);
+    pnsmc->show(path);                  /* a virtual function   */
+    return osc::osc_msg_handled();
+}
+
+/**
+ *  A handler for osc::tag::clihide =
+ *
+ *      { "/nsm/client/hide_optional_gui" + "" }
+ *
+ *  This function could also be called osc_hide_gui().  See the nsm-proxy
+ *  code.  This message is sent by the NSM GUI to instruct nsmd to tell the
+ *  client to show itself.
+ *
+ * Warning:
+ *
+ *      The agordejo version of "non-session-manager" never calls this
+ *      function.  It calls osc_nsm_show()!
+ *
+ *  What about the message osc::tag::guishow?
+ *
+ *      { "/nsm/gui/client/show_optional_gui" + "s" }
+ *
+ *  The show function uses guishow while this hide function uses clihide.
+ *
+ *  If reconciling this requires a change, fix Seq66 as well.
+ *
+ *  Also see osc_nsm_show() above.
+ */
+
+int
+nsmclient::osc_nsm_hide
+(
+    const char * path,
+    const char * types,
+    lo_arg ** /* argv */,
+    int /* argc */,
+    lo_message /* msg */,
+    void * user_data
+)
+{
+    nsmbase * pnsmc = static_cast<nsmbase *>(user_data);
+    if (pnsmc == NULL)
+        return osc::osc_msg_unhandled();
+
+    nsm::incoming_msg("Hide", path, types);
+    pnsmc->hide(path);
+    return osc::osc_msg_handled();
+}
+
+/**
+ *  A handler for osc::tag::null =  { NULL + NULL }. This is the
+ *  same as osc::tag::generic.
+ */
+
+int
+nsmclient::osc_nsm_broadcast
+(
+    const char * path,
+    const char * types,
+    lo_arg ** argv,
+    int argc,
+    lo_message /*msg*/,
+    void * user_data
+)
+{
+    nsmbase * pnsmc = static_cast<nsmbase *>(user_data);
+    if (pnsmc == NULL)
+        return osc::osc_msg_unhandled();
+
+    lib66::tokenization arguments = nsm::convert_lo_args(types, argc, argv);
+    nsm::incoming_msg("Broadcast", path, types);
+    pnsmc->handle_broadcast(path, types, arguments);
+    return osc::osc_msg_handled();
+}
+
+/*--------------------------------------------------------------------------
+ * nsmclient
+ *--------------------------------------------------------------------------*/
+
+/**
+ *  Principal constructor.
+ */
+
+nsmclient::nsmclient
+(
+    const std::string & nsmurl,
+    const std::string & nsmfile,
+    const std::string & nsmext
+) :
+    nsmbase             (nsmurl, nsmfile, nsmext)
+{
+    // no code so far
+}
+
+nsmclient::~nsmclient ()
+{
+    // no code so far
+}
+
+/**
+ *  Note that nsmbase::initialize() adds osc_nsm_error() and osc_nsm_reply()
+ *  as OSC thread messages.
+ */
+
+bool
+nsmclient::initialize ()
+{
+    bool result = nsmbase::initialize();
+    if (result)
+    {
+        add_thread_method(osc::tag::replyex, osc_nsm_announce_reply);
+        add_thread_method(osc::tag::cliopen, osc_nsm_open);
+        add_thread_method(osc::tag::clisave, osc_nsm_save);
+        add_thread_method(osc::tag::cliloaded, osc_nsm_session_loaded);
+        add_thread_method(osc::tag::clilabel, osc_nsm_label);
+        add_thread_method(osc::tag::clishow, osc_nsm_show);
+        add_thread_method(osc::tag::clihide, osc_nsm_hide);
+        add_thread_method(osc::tag::null, osc_nsm_broadcast);
+        start_thread();
+    }
+    return result;
+}
+
+/*
+ *  Server announce reply handler for the following message:
+ *
+ *      /nsm/server/announce s:application_name s:capabilities
+ *          s:executable_name i:api_ver sion_major i:api_version_minor i:pid
+ *
+ *  This message is sent by the server after the client sends its announcement
+ *  [see the nsmclient :: announce() and nsmbase :: send_announcement()
+ *  functions].
+ *
+ *  Here, we can indicate that the session is connected and active, and what
+ *  session manager is in force.  However, we do not want to activate this
+ *  client until the session settings are made in the open() function below.
+ */
+
+void
+nsmclient::announce_reply
+(
+    const std::string & mesg,
+    const std::string & mgr,
+    const std::string & caps
+)
+{
+    /*
+     * Do we need to do active(true) here?
+     */
+
+    capabilities(caps);
+    session_manager_name(mgr);
+    nsm::incoming_msg("Announce Reply Values", mgr, caps + " " + mesg);
+}
+
+/**
+ *  Client open callback for the following message:
+ *
+ *      /nsm/client/open s:path_to_instance_specific_project
+ *              s:display_name s:client_id
+ *
+ *  Format examples:
+ *
+ *      -   Path:         "/home/user/NSM Sessions/JackSession/..."
+ *          New:          "/home/user/.local/share/nsm/JackSession..."
+ *      -   Display name: "JackSession" (user's chosen session name in NSM)
+ *      -   Client ID:    "nsm66.nUKIE"
+ *
+ *  Compare to the osc_open() function in nsm-proxy.
+ *
+ *  See nsmclient::announce() for more discussion. Note that this function is
+ *  where we can be active and possible copy the application configuration to
+ *  the session path.
+ */
+
+void
+nsmclient::open
+(
+    const std::string & pathname,
+    const std::string & displayname,
+    const std::string & clientid
+)
+{
+    session_manager_path(pathname);
+    session_display_name(displayname);
+    session_client_id(clientid);
+    cfg::set_client_name(clientid);     /* set "nsm66.nUKIE" as client ID   */
+    nsm::incoming_msg("Open Values", pathname, clientid + " " + displayname);
+    is_active(true);
+}
+
+/*
+ *  Client save callback for the following message:
+ *
+ *      /nsm/client/save
+ *
+ *  Note that, though documented, code nsm :: reply :: save_failed does not
+ *  exist, so we use nsm :: reply :: general for now.  See nsmbase ::
+ *  save_reply.
+ *
+ *  Note that we should use a derived class to add access to
+ *  application-specific session-manager code.
+ *
+ *  Reminder: nsmbase::save_session() merely undirties the application.
+ */
+
+void
+nsmclient::save ()
+{
+    if (save_session())                         /* assumes that all is okay */
+    {
+        std::string msg;
+//      bool saved = m_session_manager.save_session(msg);
+//      nsm::error r = saved ? nsm::error::ok : nsm::error::general ;
+        nsm::error r = nsm::error::ok;          // TODO
+        (void) save_reply(r, msg);
+    }
+}
+
+/**
+ *  Handles the following message from the server:
+ *
+ *      /nsm/client/session_is_loaded
+ *
+ *  This message is a flag (no arguments provided).
+ */
+
+void
+nsmclient::loaded ()
+{
+    nsm_debug("Session loaded message from server");
+}
+
+/**
+ *  Handles the following message from the server:
+ *
+ *      /nsm/client/label s:label
+ */
+
+void
+nsmclient::label (const std::string & label)
+{
+    std::string tag("Label from server: ");
+    tag += label;
+    nsm_debug(tag); // no code
+}
+
+/**
+ *  Client show optional GUI.  The GUI manager class must provide this
+ *  functionality.  The message from the server is:
+ *
+ *      /nsm/client/show_optional_gui
+ */
+
+void
+nsmclient::show (const std::string & path)
+{
+    std::string msg = "show " + path;
+    nsm_debug(msg);
+    hidden(false);
+
+    /*
+     * Misread API.mu... there is no response necessary here.
+     *
+     *      send_from_client(osc::tag::reply, path, "Show OK");
+     */
+}
+
+/*
+ * Client hide optional GUI.  The message from the server is:
+ *
+ *      /nsm/client/hide_optional_gui
+ */
+
+void
+nsmclient::hide (const std::string & path)
+{
+    std::string msg = "hide " + path;
+    nsm_debug(msg);
+    hidden(true);
+
+    /*
+     * Misread API.mu... there is no response necessary here.
+     *
+     *      send_from_client(osc::tag::reply, path, "Hide OK");
+     */
+}
+
+void
+nsmclient::send_visibility (bool isshown)
+{
+    osc::tag status = isshown ? osc::tag::guishown : osc::tag::guihidden ;
+    hidden(! isshown);
+    send_from_client(status);
+}
+
+/**
+ *  Receives a broadcast and figures out what to do with it.  Sort of.  The
+ *  broadcast message seems to have no path and no data types.  Keep an eye on
+ *  this one.
+ *
+ *  The following function is for *sending* broadcasts, not yet implemented:
+ *
+ *      nsmbase::broadcast (const std::string & path, lo_message msg)
+ *
+ *  The nsmcontroller::osc_broadcast_handler() function, as an example
+ *  from our nsmd refactoring, accepts the broadcast request in its
+ *  message handler and then forwards it to all the daemons it knows
+ *  of.
+ *
+ *  Here, as a client, we probably don't have much to do except echo it
+ *  on-screen (or in GUI), which is already done by the handler. Here
+ *  we echo any arguments.
+ */
+
+void
+nsmclient::handle_broadcast
+(
+    const std::string & /*message*/,
+    const std::string & /*pattern*/,
+    const lib66::tokenization & argv
+)
+{
+    if (lo_is_valid())
+    {
+        int argc = int(argv.size());
+        for (int i = 0; i < argc; ++i)
+            util::info_printf(" [%d] %s", i, V(argv[i]));
+    }
+}
+
+/**
+ *  Provides a client-announce function.
+ *
+ *  If NSM_URL is valid and reachable, call this function to send the
+ *  following "sssiii" message to the provided address as soon as ready to
+ *  respond to the /nsm/client/open event.  api_version_major and
+ *  api_version_minor must be the two parts of the version number of the NSM
+ *  API.  If registering JACK clients, application_name must be passed to
+ *  jack_client_open.  capabilities is a string containing a list of the
+ *  capabilities the client possesses, e.g.  ":dirty:switch:progress:".
+ *  executable_name must be the executable name that launched the program (e.g
+ *  argv[0]).
+ *
+ *  We wait on the reply from NSM, which is flagged by an atomic boolean in
+ *  the open() function.
+ *
+\verbatim
+    /nsm/server/announce s:application_name s:capabilities s:executable_name
+         i:api_version_major i:api_version_minor i:pid
+\endverbatim
+ *
+ * \param appname
+ *      Provides the "nick-name" for the application.  The nsm66_features.cpp
+ *      function seq_client_name() is used to get this name, which starts out
+ *      as "nsm66".  The seq_client_name() is later modified in the open()
+ *      callback function, and ends up like "nsm66.nUKIE".
+ *
+ * \param exename
+ *      Comes from argv[0].  For example, it has the value "qnsm66" in the
+ *      graphical application.
+ *
+ * \param capabilities
+ *      Provides the main session features the application supports.
+ */
+
+bool
+nsmclient::announce
+(
+    const std::string & appname,        /* actually a package name, "Seq66" */
+    const std::string & exename,        /* comes from argv[0]               */
+    const std::string & capabilities    /* e.g. ":switch:dirty:"            */
+)
+{
+    bool result = send_announcement(appname, exename, capabilities);
+    if (result)
+    {
+        int count = 12;
+        while (! is_active())           /* this is an atomic boolean check  */
+        {
+            (void) msg_check(1000);
+            if (--count == 0)
+            {
+                errprint("Timed out waiting for NSM");
+                result = false;
+                break;
+            }
+        }
+    }
+    return result;
+}
+
+/*
+ * Prospective caller helpers a la qtractorMainForm.
+ */
+
+/**
+ *  After calling this function and checking the return value,
+ *  the caller should close out any "open" items and set up a new "session".
+ *
+ *  After that, call open_reply() with the boolean result of the new session
+ *  setup.
+ */
+
+bool
+nsmclient::open_session ()
+{
+    bool result = nsmbase::open_session();
+    if (result)
+    {
+        // what else?
+    }
+    return result;
+}
+
+/*
+ *  Virtual functions to pass status to an smanager-derived class.
+ */
+
+void
+nsmclient::session_manager_name (const std::string & mgrname)
+{
+    manager(mgrname);
+//  m_session_manager.session_manager_name(mgrname);
+}
+
+void
+nsmclient::session_manager_path (const std::string & pathname)
+{
+    path_name(pathname);
+//  m_session_manager.session_manager_path(pathname);
+}
+
+void
+nsmclient::session_display_name (const std::string & dispname)
+{
+    display_name(dispname);
+//  m_session_manager.session_display_name(dispname);
+}
+
+void
+nsmclient::session_client_id (const std::string & clid)
+{
+    client_id(clid);
+//  m_session_manager.session_client_id(clid);
+}
+
+/**
+ *  Provides a factory function to create an nsmclient, and then to call its
+ *  virtual initialization function (so that we don't have to call it in the
+ *  constructor).
+ *
+ *  Note that this bare pointer returned should be assigned immediately to a
+ *  smart pointer, such as std::unique_ptr<>.  See
+ *  seq_qt5/src/qt5nsmanager.cpp for an example.
+ *
+ * \param sm
+ *      Provides a reference to the existing session manager.
+ *
+ * \param nsmurl
+ *      Provides either the value of NSM_URL or the value that might be
+ *      defined in the "usr" file.
+ *
+ * \param nsmfile
+ *      Need to revisit this and figure out what it is.  The name of the nsm
+ *      file?  Currently created by nsmd, it is always "session.nsm".
+ *
+ * \param nsmext
+ *      The NSM file extension, "nsm".
+ *
+ * \return
+ *      Returns the pointer to the nsmclient.  Assign it to a smart pointer
+ *      immediately!
+ */
+
+nsmclient *
+create_nsmclient
+(
+    const std::string & nsmurl,
+    const std::string & nsmfile,
+    const std::string & nsmext
+)
+{
+    nsmclient * result = nullptr;
+    if (! nsmurl.empty())
+    {
+        result = new (std::nothrow) nsmclient(/*sm,*/ nsmurl, nsmfile, nsmext);
+        if (not_nullptr(result))
+            (void) result->initialize();
+    }
+    return result;
+}
+
+}           // namespace nsm
+
+/*
+ * nsmclient.cpp
+ *
+ * vim: sw=4 ts=4 wm=4 et ft=cpp
+ */
+

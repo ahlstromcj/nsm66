@@ -1,0 +1,9 @@
+Nsm66 Subprojects Directory
+Chris Ahlstrom
+2025-01-29 to 2025-01-31
+
+The "subprojects" directory shall support usage of the potext and
+cfg66 libraries. plus the lib66 headers-only library, as subprojects
+that get downloaded from GitHub.
+
+# vim: sw=4 ts=4 wm=8 et ft=sh

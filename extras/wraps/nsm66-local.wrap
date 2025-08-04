@@ -1,0 +1,32 @@
+#----------------------------------------------------------------------------
+#
+# Nsm66 Local-file Library Wrapper
+# Chris Ahlstrom
+# 2025-02-13 to 2025-02-13
+#
+# Nsm66 wrapper for local tar-file. NOT READY.
+#
+#----------------------------------------------------------------------------
+
+[wrap-file]
+
+directory = nsm66
+source_url = file:///home/ahlstrom/Home/ca/mls/git/archive/nsm66-0.1.tar.xz
+source_filename = nsm66-0.1.tar.xz
+source_hash = 87ae04f24b039952f2e91edf282d60bc3b31835cac4595fad413802a2a3f7f46
+lead_directory_missing = false
+
+# patch_url = https://github.com/ahlstromcj/nsm66/raw/master/zips/nsm66-0.1-patches-1.zip
+# patch_filename = nsm66-0.1-patches-1.zip
+# patch_hash = 0000000000000000000000000000000000000000000000000000000000000000
+
+[provide]
+
+#----------------------------------------------------------------------------
+# These dependencies are declared in nsm66/library/meson.build.
+#----------------------------------------------------------------------------
+
+libnsm66_include = libnsm66_include_dep
+libnsm66_library = libnsm66_library_dep
+
+# vim: ft=dosini

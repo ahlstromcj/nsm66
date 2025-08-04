@@ -1,0 +1,11 @@
+
+qt5nsmanager():
+
+    clinsmanager():
+
+    Create qsmainwnd;
+
+    create_window():
+
+        Check visibility, handle show/hide;
+        Start GUI update timer;

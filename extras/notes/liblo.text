@@ -1,0 +1,192 @@
+Notes on usage of the liblo library
+Chris Ahlstrom
+2025-04-18 to 2025-04-21
+
+liblo (and OSC) can be a bit confusing. Some clarifications herein.
+
+[]  lo_address lo_address_new (const char *  host, const char *  port)  
+
+    Declare an OSC destination, given IP address and port number. Same as
+    lo_address_new_with_proto(), but using UDP.
+
+        host - An IP address or number, or NULL for the local machine.
+        port - A decimal port number or service name.
+
+    The lo_address object may be used as the target of OSC messages.
+
+    To receive replies from the target of this address, supply a lo_server
+    by using lo_send_from() or lo_send_message_from() to send the message,
+    otherwise the last lo_server or lo_server_thread that was created will
+    be used as the reply socket.
+
+    The remote receiver may get the reply address by calling
+    lo_message_get_source() in the message handler.
+
+[]  lo_address lo_address_new_from_url (const char *  url) 
+
+    Create a lo_address object from an OSC URL.
+
+    Example: "osc.udp://localhost:4444/my/path/"
+
+[]  int lo_send
+    (
+        lo_address targ, const char * path, const char * type, ...
+    )
+
+    Send a OSC formatted message to the address specified.
+
+[]  int lo_send_from
+    (
+        lo_address targ, lo_server from, lo_timetag ts,
+        const char * path, const char * type, ... 
+    ) 
+
+    Send a OSC formatted message to the address specified, from the same
+    socket as the specified server.
+
+    If a server is receiving this message, it can reply by getting the
+    server's address by calling lo_message_get_source() in the message
+    handler, passing the lo_message provided as an argument to the
+    lo_method_handler. By this mechanism bidirectional communication
+    can be established by setting up a lo_server or lo_server_thread
+    on both sides.
+
+    targ - The target OSC address.
+    from - The server to send message from (can be NULL to use a new
+           socket).
+    ts   - The OSC timetag timestamp at which the message will be
+           processed (can be LO_TT_IMMEDIATE to not attach a timetag).
+
+Server vs client:
+
+     OSC the term "server" refers to the peer getting data sent to and
+     "client" to the peer providing the data.
+
+     Or "device accepting connections" (e.g. HTTP server), versus
+     "device requesting connections" (e.g. HTTP client).
+
+     Everything is pretty easy when looking at the echoserver
+     sample:
+
+        1.  Open a "server" socket by lo_server_thread_new_with_proto()
+            and wait for data by registering a callback via
+            lo_server_add_method().
+        2.  The client creates an address with lo_address_new_with_proto()
+            and uses it for lo_send, in which case a connection is
+            established, if not already set up.
+
+Command-line:
+
+    oscsend osc.udp://localhost:19735 /Carla/0/set_volume f 0.8
+
+Processes:
+
+    nsmctl:
+
+        nsmcontroller::init_osc()
+            endpoint::init()
+                lowrapper::init()
+                    server = lo_server_new_with_proto(0x0, LO_UDP, eh)
+                    char * u = lo_server_get_url(server)
+                    address = lo_address_new_from_url(u)
+                    lo_server_add_method(server, ...) [ many times ]
+            endpoint::start() [ clones a thread ]
+
+        Bug? The controller never goes active.
+
+    nsmd:
+
+        Similar to endpoint::init() above.
+
+    jackpatch:
+
+        init_osc()
+            server = low_server_new(port, NULL)
+            url = lo_server_get_url(server)
+            add_methods()
+                lo_server_add_method(server, ...)
+        osc::process_announce(server, caps, url, ...)
+            to = lo_address_new_from_url(url)
+            lo_send_from(to, server, "/nsm/server/announce", ...)
+            lo_address_free(to)
+        for (;;)
+        {
+            lo_server_recv_noblock(server, 200);
+        }
+
+    nsmclient & nsmbase:
+
+        nsmclient
+            nsmbase
+                lowrapper
+        nsmclient::initialize()
+            nsmbase::initialize()
+                laddr = lo_address_new_from_url(url)
+                proto = lo_address_get_protocol(laddr);
+                st = lo_server_thread_new_with_proto(NULL, proto, NULL);
+                s = lo_server_thread_get_server(st);
+                (void) lo_server_thread_add_method(...)
+            (void) lo_server_thread_add_method(...)
+            lo_server_thread_start(st);
+
+            <work>
+
+            nsmbase::msg_check(timeoutms)
+                if (lo_server_wait(s, timeoutms))
+                    while (lo_server_recv_noblock(s, 0))
+
+            path = nsm::dirty_msg(isdirty)
+            send(path, "")
+
+            lo_send_from(laddr, s, ...);
+
+            lo_server_thread_free(m_server_thread) [needs fixing!!!]
+            lo_server_free(m_lo_server)
+
+    example_client (liblo):
+
+        // if last arg is null, server picks the port
+
+        address = lo_address_new(NULL, "7770")
+        lo_send(address, "/foo/bar", ....)      // -1 indicates error:
+            lo_address_errno(address),
+            lo_address_errstr(address)
+
+    example_server (liblo):
+
+        st = lo_server_thread_new("7770", error)
+        lo_server_thread_add_method(st, NULL, NULL, generic_handler, NULL)
+        lo_server_thread_add_method(st, "/p*", "", pattern_handler, NULL)
+          . . .
+        lo_server_thread_add_method(st, "/quit", "", quit_handler, NULL);
+        lo_server_thread_start(st)
+        while (! done) usleep(1000)                 // set in quit_handler()
+        lo_server_thread_free(st)
+
+    example_tcp_echo_server (liblo):
+
+        st = lo_server_thread_new_with_proto(port, LO_TCP, error)
+        s = lo_server_thread_get_server(st)
+        lo_server_thread_add_method(st, "/quit", "", quit_handler, NULL)
+        lo_server_thread_add_method(st, NULL, NULL, echo_handler, s)
+        lo_server_thread_start(st)
+        signal(SIGINT,ctrlc)
+        lo_address a = lo_address_new_with_proto(LO_TCP, "localhost", "7770")
+        int r = lo_send_from(a, s, LO_TT_IMMEDIATE, "/test", "ifs", ...)
+        if (a) lo_address_free(a)
+        while (! done) sleep(1)
+        lo_server_thread_free(st)
+
+    nonblocking_server_example (liblo):
+
+        s = lo_server_new("7770", error)
+        lo_server_add_method(s, NULL, NULL, generic_handler, NULL)
+        lo_server_add_method(s, "/quit", "", quit_handler, NULL)
+        lo_fd = lo_server_get_socket_fd(s)
+        do  {
+            retval = select(lo_fd + 1, &rfds, NULL, NULL, NULL)/* no timeout */
+            if (FD_ISSET(lo_fd, &rfds)) lo_server_recv_noblock(s, 0)
+        } while (! done)
+
+# vim: sw=4 ts=4 wm=8 et ft=dosini
+

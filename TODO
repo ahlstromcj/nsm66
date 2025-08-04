@@ -1,0 +1,17 @@
+TODOs for the Nsm66 library
+Chris Ahlstrom
+2025-01-29 to 2025-03-20
+
+This file lists only the high-priority features and fixes we need
+to do for Nsm66.
+
+Fixes:
+
+    -   The uninstall leaves /usr/local/lib/pkgconfig/libnsm66.pc
+        intact!
+
+Tests:
+
+    -   To do
+
+# vim: sw=4 ts=4 wm=8 et ft=sh

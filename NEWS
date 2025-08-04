@@ -1,0 +1,28 @@
+NEWS for Nsm66 0.1
+Chris Ahlstrom
+2025-01-29 to 2025-03-25
+
+# Changelog
+
+## [0.1] - 2025-03-25
+
+New project. Provides a number of classes and functions to support
+the refactoring of nsmd and its related applications.
+
+### Added
+
+- To do
+
+### Fixed
+
+- To do
+
+### Changed
+
+- To do
+
+### Removed
+
+- Nothing
+
+# vim: sw=4 ts=4 wm=4 et ft=markdown
