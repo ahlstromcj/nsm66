@@ -30,7 +30,7 @@
  * \library       nsm66
  * \author        Chris Ahlstrom and other authors; see documentation
  * \date          2025-02-05
- * \updates       2025-04-18
+ * \updates       2025-10-27
  * \version       $Revision$
  * \license       GNU GPL v2 or above
  *
@@ -43,6 +43,8 @@
 
 #include <pthread.h>                    /* <thread> for std::thread?        */
 #include <string>                       /* std::string                      */
+
+#include "cpp_types.hpp"                /* CSTR() inline functions          */
 
 #if defined USE_THREAD_ASSERT           /* nobody uses this macro           */
 #define THREAD_ASSERT(n) \
@@ -88,7 +90,7 @@ public:
 
     const char * name_pointer () const
     {
-        return m_name.c_str();
+        return CSTR(m_name);
     }
 
     const std::string & name () const
@@ -106,7 +108,7 @@ public:
 
     void set ()
     {
-        set(m_name.c_str());
+        set(CSTR(m_name));
     }
 
     bool running () const

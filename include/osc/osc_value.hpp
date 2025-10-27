@@ -30,7 +30,7 @@
  * \library       nsm66
  * \author        Chris Ahlstrom and other authors; see documentation
  * \date          2025-02-06
- * \updates       2025-02-06
+ * \updates       2025-10-27
  * \version       $Revision$
  * \license       GNU GPL v2 or above
  *
@@ -39,6 +39,8 @@
 
 #include <list>
 #include <string>
+
+#include "cpp_types.hpp"                /* CSTR() inline functions          */
 
 namespace osc
 {
@@ -132,7 +134,7 @@ public:
 
     const char * value_ptr () const
     {
-        return m_s.c_str();
+        return CSTR(m_s);
     }
 
 };          // class osc_string

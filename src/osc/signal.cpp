@@ -27,7 +27,7 @@
  * \library       nsm66
  * \author        Chris Ahlstrom and other authors; see documentation
  * \date          2025-02-05
- * \updates       2025-04-05
+ * \updates       2025-10-27
  * \version       $Revision$
  * \license       GNU GPL v2 or above
  *
@@ -105,10 +105,10 @@ signal::rename (const std::string & path)
         "%s%s", V(m_endpoint->name()), V(path)
     );
     util::info_printf("Renaming signal %s to %s", V(path), V(newpath));
-    lo_server_del_method(m_endpoint->server(), m_path.c_str(), NULL);
+    lo_server_del_method(m_endpoint->server(), CSTR(m_path), NULL);
     lo_server_add_method
     (
-        m_endpoint->server(), newpath.c_str(), NULL,
+        m_endpoint->server(), CSTR(newpath), NULL,
         m_endpoint->osc_sig_handler, this
     );
     for (auto & p : m_endpoint->m_peers)

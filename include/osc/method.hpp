@@ -30,7 +30,7 @@
  * \library       nsm66
  * \author        Chris Ahlstrom and other authors; see documentation
  * \date          2025-02-05
- * \updates       2025-02-05
+ * \updates       2025-10-27
  * \version       $Revision$
  * \license       GNU GPL v2 or above
  *
@@ -39,6 +39,8 @@
 
 #include <list>
 #include <string>
+
+#include "cpp_types.hpp"                /* CSTR() inline function           */
 
 namespace osc
 {
@@ -75,7 +77,7 @@ public:
 
     const char * path_pointer ()
     {
-        return m_path.c_str();
+        return CSTR(m_path);
     }
 
     const std::string & typespec () const
@@ -85,7 +87,7 @@ public:
 
     const char * typespec_pointer ()
     {
-        return m_typespec.c_str();
+        return CSTR(m_typespec);
     }
 
     const std::string & documentation () const

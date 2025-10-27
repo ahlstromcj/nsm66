@@ -44,7 +44,7 @@ const std::string NIL { "-" };
 inline
 const char * osc_message_ptr (const std::string & s)
 {
-    return s == NIL ? NULL : s.c_str() ;    /* CSTR(s) vs NULL              */
+    return s == NIL ? NULL : s.c_str() ;    /* CPTR(s) vs NULL              */
 }
 
 /**

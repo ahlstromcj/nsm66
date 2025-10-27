@@ -30,7 +30,7 @@
  * \library       nsm66
  * \author        Chris Ahlstrom and other authors; see documentation
  * \date          2025-02-05
- * \updates       2025-04-05
+ * \updates       2025-10-27
  * \version       $Revision$
  * \license       GNU GPL v2 or above
  *
@@ -140,7 +140,7 @@ public:
 
     const char * peer_name_pointer () const
     {
-        return m_peer->p_name.c_str();
+        return CSTR(m_peer->p_name);
     }
 
     const std::string & path () const
@@ -150,7 +150,7 @@ public:
 
     const char * path_pointer () const
     {
-        return m_path.c_str();
+        return CSTR(m_path);
     }
 
     void rename (const std::string & name);
