@@ -1,4 +1,4 @@
-# README for Library Nsm66 0.1 2025-03-20
+# README for Library Nsm66 0.1 2025-02-26
 
 __Nsm66__ is a Non/New Session Manager support library based on the code
 in the __Seq66__ project, but that is useful in other applications.
@@ -32,7 +32,7 @@ the Non/New Session Manager applications.
 ##  Library Features
 
     *   Can be built using GNU C++ or Clang C++.
-    *   Basic dependencies: Meson 1.1 and above; C++14 and above.
+    *   Basic dependencies: Meson 1.1 and above; C++17 and above.
     *   The build system is Meson, and sample wrap files are provided
         for using Nsm66 as a C++ subproject.
     *   PDF documentation built from LaTeX.
@@ -42,7 +42,7 @@ the Non/New Session Manager applications.
     *   The code is a mix of hard-core C++ and C-like functions.
     *   The C++ STL and advanced language features are used as much as
         possible
-    *   C++14 is required for some of its features.
+    *   C++17 is required for some of its features.
     *   The GNU and Clang C++ compilers are supported.
     *   Broken into modules for easier maintenance.
     *   Requires usage of the lib66 and cfg66 libraries (as Meson

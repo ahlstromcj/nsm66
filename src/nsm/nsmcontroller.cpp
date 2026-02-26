@@ -27,7 +27,7 @@
  * \library       nsmctl application
  * \author        Chris Ahlstrom and other authors; see documentation
  * \date          2025-03-21
- * \updates       2025-04-24
+ * \updates       2026-02-26
  * \version       $Revision$
  * \license       GNU GPL v2 or above
  *
@@ -245,6 +245,9 @@ nsmcontroller::send_client_message
  *  The original clients_pack was an FLTK container (disclaimer, we know
  *  nothing about FLTK). Here, we have a map of IDs and client names.
  *  The client IDs are of the form "nXYZT".
+ *
+ *  Note the C++17 allows the find() and end() check to be together
+ *  in the if() clause.
  */
 
 nsmctlclient *
@@ -253,7 +256,7 @@ nsmcontroller::client_by_id (const std::string & id) const
     nsmctlclient * result = nullptr;
 #if defined PLATFORM_CPP_17
     if (auto c = m_clients_pack.find(id); c != m_clients_pack.end())
-        result = c.second;
+        result = c->second;
 #else
     auto c = m_clients_pack.find(id);
     if (c != m_clients_pack.end())
